@@ -97,11 +97,13 @@
   }
 
   let modalClose = null;
+  let returnFocus = null;
   function modal({ title, body, foot = '', wide = false, onClose = null }) {
     const root = document.getElementById('modal-root');
     // re-rendering an open dialog (after an edit) must not replay the open animation
     const still = root.innerHTML ? 'still' : '';
-    if (still) { root.innerHTML = ''; modalClose = null; } else closeModal();
+    if (still) { root.innerHTML = ''; modalClose = null; } else { closeModal(); returnFocus = document.activeElement; }
+    document.documentElement.classList.add('modal-open');
     root.innerHTML = `<div class="modal-bg ${still}" data-act="modal-bg"><div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
       <div class="modal-head"><h3>${esc(title)}</h3><button class="icon-btn" data-act="modal-close" aria-label="Закрити">${icon('x')}</button></div>
       <div class="modal-body">${body}</div>${foot ? `<div class="modal-foot">${foot}</div>` : ''}</div></div>`;
@@ -111,8 +113,25 @@
   }
   function closeModal() {
     const root = document.getElementById('modal-root');
-    if (root && root.innerHTML) { root.innerHTML = ''; const f = modalClose; modalClose = null; if (f) f(); }
+    if (root && root.innerHTML) {
+      root.innerHTML = '';
+      document.documentElement.classList.remove('modal-open');
+      const f = modalClose; modalClose = null; if (f) f();
+      if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+      returnFocus = null;
+    }
   }
+  // keep Tab inside an open dialog
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Tab') return;
+    const m = document.querySelector('#modal-root .modal');
+    if (!m) return;
+    const f = [...m.querySelectorAll('button, [href], input, select, textarea, summary')].filter(x => !x.disabled && x.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && (document.activeElement === last || !m.contains(document.activeElement))) { ev.preventDefault(); first.focus(); }
+  });
   const modalOpen = () => !!document.getElementById('modal-root').innerHTML;
 
   // Inspection photo: thumbnail that opens full size

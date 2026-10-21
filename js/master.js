@@ -10,7 +10,9 @@
   function nextSteps(o) {
     const hasQuestions = o.items.some(i => i.sev !== 'green' && i.decision === null) || (o.parts || []).some(l => l.status === 'quote' && l.approved === null);
     switch (o.status) {
-      case 'new': case 'confirmed': return [{ act: 'm-open', label: 'Прийняти авто', primary: true }];
+      case 'new': case 'confirmed': return o.date > Store.dayStr(0)
+        ? [{ wait: `Запис на ${fmtDay(o.date)}, ${o.time}` }]
+        : [{ act: 'm-open', label: 'Прийняти авто', primary: true }];
       case 'accepted': return [{ s: 'diagnostics', label: 'Почати діагностику', primary: true }];
       case 'diagnostics': return hasQuestions
         ? [{ s: 'approval', label: 'Надіслати клієнту на погодження', primary: true }, { s: 'repair', label: 'Почати ремонт без погодження' }]
@@ -135,7 +137,8 @@
     const car = Store.car(o.carId);
     const u = Store.user(o.userId);
     const mineOrFree = !o.master || o.master === me.id;
-    const accepting = ['new', 'confirmed'].includes(o.status);
+    const accepting = ['new', 'confirmed'].includes(o.status) && o.date <= Store.dayStr(0);
+    const future = ['new', 'confirmed'].includes(o.status) && !accepting;
     const scroll = document.querySelector('.modal')?.scrollTop;
     modal({
       wide: true, title: `Наряд ${o.id}`,
@@ -145,6 +148,7 @@
           ${statusPill(o.status)}</div>
         ${o.comment ? `<div class="note"><span><b>Зі слів клієнта:</b> ${esc(o.comment)}</span></div>` : ''}
         <div class="stack"><span class="lbl">Роботи за записом</span><div class="job" style="padding:12px 14px"><div class="svc">${o.services.map(sid => { const sv = Store.service(sid); return `<div><span>${esc(sv.name)}</span><span>${dur(sv.dur)}</span></div>`; }).join('')}</div></div></div>
+        ${future ? `<div class="note"><span>Авто записане на <b>${fmtDay(o.date, true)}, ${o.time}</b>. Прийняти його можна в день візиту.</span></div>` : ''}
         ${!mineOrFree ? `<div class="note">Наряд закріплено за іншим майстром: ${esc(Store.master(o.master)?.name || '')}. Ви можете лише переглядати.</div>` : accepting ? `
         <form class="panel pad stack" data-form="m-accept" style="background:var(--panel-2)"><input type="hidden" name="id" value="${o.id}">
           <h3>Прийом авто</h3>

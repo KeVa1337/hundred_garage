@@ -82,7 +82,7 @@
   // ---------- Bay schedule ----------
   function schedule(day) {
     const orders = S().orders.filter(o => o.date === day && o.status !== 'cancelled');
-    const H0 = 9, H1 = 19;
+    const H0 = 8, H1 = 20; // weekday opening hours
     const hours = [];
     for (let h = H0; h < H1; h++) hours.push(h);
     return `<div class="sched"><div class="sched-grid">
@@ -94,7 +94,7 @@
         <div class="sched-row">${list.map(o => {
           const [hh, mm] = o.time.split(':').map(Number);
           const start = Math.max(1, (hh - H0) * 2 + (mm >= 30 ? 1 : 0) + 1);
-          const span = Math.max(2, Math.min(21 - start, Math.ceil(orderDur(o) / 30)));
+          const span = Math.max(2, Math.min((H1 - H0) * 2 + 1 - start, Math.ceil(orderDur(o) / 30)));
           const car = Store.car(o.carId);
           return `<button class="blk st-${o.status}" style="grid-column:${start} / span ${span}" data-act="adm-order" data-id="${o.id}" title="${esc(o.id)} · ${esc(Store.status(o.status).name)}"><b>${esc(carName(car))}</b><span>${o.time} · ${esc(Store.status(o.status).short)}</span></button>`;
         }).join('')}</div>`;
@@ -116,7 +116,7 @@
       const revPrev = donePrev.reduce((s, o) => s + o.total, 0);
       const avg = done30.length ? rev / done30.length : 0;
       const delta = revPrev ? Math.round((rev - revPrev) / revPrev * 100) : null;
-      const loadToday = Math.round(todays.reduce((s, o) => s + orderDur(o), 0) / (S().bays.length * 10 * 60) * 100);
+      const loadToday = Math.round(todays.reduce((s, o) => s + orderDur(o), 0) / (S().bays.length * 12 * 60) * 100);
       const ready = S().orders.filter(o => o.status === 'ready').length;
       const approval = S().orders.filter(o => o.status === 'approval').length;
       // service mix by category, last 30 days
@@ -134,7 +134,7 @@
           <div class="kpi"><span>Нові заявки</span><b>${newOnes.length}</b><span class="delta">${ready} авто готові до видачі</span></div>
           <div class="kpi"><span>Виручка · 30 днів</span><b>${money(rev)}</b>${delta !== null ? `<span class="delta ${delta >= 0 ? 'up' : ''}">${delta >= 0 ? '+' : ''}${delta}% до попередніх 30</span>` : ''}</div>
           <div class="kpi"><span>Середній чек</span><b>${money(avg)}</b><span class="delta">${done30.length} ${plural(done30.length, 'візит', 'візити', 'візитів')}</span></div>
-          <div class="kpi"><span>Завантаженість постів</span><b>${loadToday}%</b><span class="delta">сьогодні, 4 пости × 10 год</span></div>
+          <div class="kpi"><span>Завантаженість постів</span><b>${loadToday}%</b><span class="delta">сьогодні, 4 пости × 12 год</span></div>
         </div>
 
         <div class="stack" style="margin-top:28px">
@@ -152,7 +152,7 @@
           <div class="panel pad stack">
             <h3>Виручка за 14 днів</h3>
             ${revenueChart(revenueSeries(14))}
-            <span class="small muted">Сума закритих замовлень по днях. Сьогоднішній день виділено жовтим.</span>
+            <span class="small muted">Сума закритих (виданих) замовлень по днях${revenueSeries(1)[0].v ? ', сьогодні — жовтим' : ''}. Наведіть на стовпчик, щоб побачити суму.</span>
           </div>
         </div>
         <div class="panel pad stack" style="margin-top:24px">
@@ -250,12 +250,12 @@
       <div style="min-width:0"><b>${esc(l.name)}</b>${(l.qty || 1) > 1 ? ` <span class="mono">× ${l.qty}</span>` : ''} <span class="pill info">запит${m ? ' · ' + esc(m.name.split(' ')[0]) : ''}</span>${l.note ? `<div class="small muted">${esc(l.note)}</div>` : ''}</div>
       <button class="icon-btn" style="width:34px;height:34px" data-act="adm-part-del" data-id="${o.id}" data-p="${l.id}" aria-label="Видалити запит">${icon('trash', 'width="16" height="16"')}</button>
       <form class="grid" data-form="adm-price-req" style="grid-column:1/-1;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));align-items:end;gap:8px"><input type="hidden" name="id" value="${o.id}"><input type="hidden" name="p" value="${l.id}">
-        <div class="field"><label>Бренд</label><input class="input" name="brand" required placeholder="Bosch"></div>
-        <div class="field"><label>Артикул</label><input class="input mono" name="code"></div>
-        <div class="field"><label>Ціна, ₴</label><input class="input mono" name="price" inputmode="numeric" required></div>
-        <div class="field"><label>Термін</label><input class="input" name="eta" placeholder="на складі"></div>
-        <div class="field"><label>Аналог: бренд</label><input class="input" name="altBrand"></div>
-        <div class="field"><label>Аналог: ціна</label><input class="input mono" name="altPrice" inputmode="numeric"></div>
+        <div class="field"><label for="rq-${l.id}-brand">Бренд</label><input id="rq-${l.id}-brand" class="input" name="brand" required placeholder="Bosch"></div>
+        <div class="field"><label for="rq-${l.id}-code">Артикул</label><input id="rq-${l.id}-code" class="input mono" name="code"></div>
+        <div class="field"><label for="rq-${l.id}-price">Ціна, ₴</label><input id="rq-${l.id}-price" class="input mono" name="price" inputmode="numeric" required></div>
+        <div class="field"><label for="rq-${l.id}-eta">Термін</label><input id="rq-${l.id}-eta" class="input" name="eta" placeholder="на складі"></div>
+        <div class="field"><label for="rq-${l.id}-altBrand">Аналог: бренд</label><input id="rq-${l.id}-altBrand" class="input" name="altBrand"></div>
+        <div class="field"><label for="rq-${l.id}-altPrice">Аналог: ціна</label><input id="rq-${l.id}-altPrice" class="input mono" name="altPrice" inputmode="numeric"></div>
         <button class="btn sm primary" type="submit">Оцінити → клієнту</button>
       </form></div>`;
   }
@@ -330,7 +330,7 @@
           <dl class="kv"><dt>Клієнт</dt><dd><b>${esc(u?.name || '—')}</b> · <span class="mono">${esc(UI.fmtPhone(u?.phone || ''))}</span></dd><dt>Авто</dt><dd>${esc(carName(car))}, ${car.year || ''} · ${plate(car.plate || '—')}</dd><dt>Запчастини</dt><dd>${esc(Store.PARTS_PREF[o.partsPref || 'service'])}</dd><dt>Час роботи</dt><dd class="mono">${UI.dur(Store.workMinutes(o) || 0)} з ${UI.dur(Store.normMinutes(o))} за нормою${o.work?.running ? ' · ▶ йде' : ''}</dd>${o.masterNote ? `<dt>Нотатка майстра</dt><dd>${esc(o.masterNote)}</dd>` : ''}${o.comment ? `<dt>Коментар</dt><dd>${esc(o.comment)}</dd>` : ''}${o.waitOnSite ? '<dt>Клієнт</dt><dd>чекає в клієнтській зоні</dd>' : ''}</dl>
           ${statusPill(o.status)}</div>
         <div class="stack"><span class="lbl">Статус — клієнт бачить зміни одразу</span>
-          <div class="chips">${FLOW.map(s => `<button class="chip ${o.status === s ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="${s}">${esc(Store.status(s).short)}</button>`).join('')}<button class="chip ${o.status === 'cancelled' ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="cancelled">Скасовано</button></div>
+          ${o.closed ? '<div class="note">Замовлення видане й оплачене: бали нараховано, зарплату майстру враховано. Етап більше не змінюється.</div>' : `<div class="chips">${FLOW.map(s => `<button class="chip ${o.status === s ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="${s}">${esc(Store.status(s).short)}</button>`).join('')}<button class="chip ${o.status === 'cancelled' ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="cancelled">Скасовано</button></div>`}
           ${next ? `<button class="btn primary" style="justify-self:start" data-act="adm-status" data-id="${o.id}" data-s="${next}">Далі: ${esc(Store.status(next).name)} ${icon('arrow', 'width="18" height="18"')}</button>` : ''}
         </div>
         <form class="grid g3" data-form="adm-order" id="adm-order-form">
@@ -375,6 +375,7 @@
   }
   // One status change routine for admin and masters: checks, side effects, client notification
   App.applyStatus = (o, s) => {
+    if (o.closed) return 'Замовлення вже видане й оплачене — змінити етап не можна';
     const hasQuestions = o.items.some(i => i.sev !== 'green' && i.decision === null) || (o.parts || []).some(l => l.status === 'quote' && l.approved === null);
     if (s === 'approval' && !hasQuestions) return 'Спочатку додайте знахідки огляду або оцінені запчастини, які потрібно погодити';
     if (s === 'cancelled' && o.useBonus && !o.closed) { Store.user(o.userId).bonus += o.useBonus; o.useBonus = 0; }

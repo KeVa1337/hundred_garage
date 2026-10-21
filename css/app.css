@@ -86,6 +86,7 @@
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html.modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -150,7 +151,7 @@ p { margin: 0; }
 .btn.sm { min-height: 34px; padding: 0 12px; font-size: var(--step--1); }
 .btn.block { width: 100%; }
 .btn[disabled] { opacity: .45; pointer-events: none; }
-.link-btn { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; display: inline-block; padding-block: 10px; margin-block: -10px; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px;
@@ -618,12 +619,12 @@ td .sub { display: block; font-size: .78rem; color: var(--steel); }
 
 /* Schedule board (admin) */
 .sched { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-.sched-grid { display: grid; grid-template-columns: 90px repeat(10, minmax(64px, 1fr)); min-width: 760px; }
+.sched-grid { display: grid; grid-template-columns: 90px repeat(12, minmax(60px, 1fr)); min-width: 860px; }
 .sched-grid .h { font: 500 .72rem var(--f-mono); color: var(--steel); padding: 10px 6px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); }
 .sched-grid .bayl { font: 700 .85rem var(--f-display); padding: 14px 10px; border-bottom: 1px solid var(--line); display: grid; align-content: center; }
 .sched-grid .bayl small { font: 400 .7rem var(--f-mono); color: var(--steel); }
-.sched-row { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(20, 1fr); border-bottom: 1px solid var(--line); position: relative; min-height: 58px;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--line) calc(10% - 1px) 10%); }
+.sched-row { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(24, 1fr); border-bottom: 1px solid var(--line); position: relative; min-height: 58px;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 12 - 1px), var(--line) calc(100% / 12 - 1px) calc(100% / 12)); }
 .blk {
   margin: 6px 2px; border-radius: 6px; padding: 6px 8px; font-size: .75rem; line-height: 1.25; overflow: hidden; cursor: pointer; border: 0; text-align: left;
   background: var(--panel-2); border-left: 3px solid var(--steel); color: var(--ink); min-width: 0;
@@ -631,7 +632,7 @@ td .sub { display: block; font-size: .78rem; color: var(--steel); }
 .blk b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .blk span { color: var(--steel); white-space: nowrap; }
 .blk.st-new, .blk.st-confirmed { border-left-color: var(--info); background: var(--info-bg); }
-.blk.st-accepted, .blk.st-diagnostics, .blk.st-repair, .blk.st-qc { border-left-color: var(--warn); background: var(--warn-bg); }
+.blk.st-accepted, .blk.st-diagnostics, .blk.st-parts, .blk.st-repair, .blk.st-qc { border-left-color: var(--warn); background: var(--warn-bg); }
 .blk.st-approval { border-left-color: var(--bad); background: var(--bad-bg); }
 .blk.st-ready, .blk.st-done { border-left-color: var(--ok); background: var(--ok-bg); }
 

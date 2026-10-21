@@ -1,0 +1,14 @@
+{
+  "name": "hundred-garage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hundred Garage — сайт автосервісу (демо)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}

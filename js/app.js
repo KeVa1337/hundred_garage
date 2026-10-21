@@ -36,7 +36,7 @@
       this.renderDemoBar();
       if (window.Chat) Chat.render();
       if (r.mount && (!r.area || s.role === { cabinet: 'client', admin: 'admin', master: 'master' }[r.area])) r.mount();
-      if (!keepScroll && prev !== name) window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
+      if (!keepScroll && prev !== name) window.scrollTo({ top: 0, behavior: 'instant' });
     },
     refresh() { Store.save(); this.render(this.current, true); },
 
@@ -152,7 +152,7 @@
     registerUser({ name, phone }) {
       const id = 'u' + Store.next('user');
       const u = {
-        id, role: 'client', name: name || 'Новий клієнт', phone: '+' + String(phone).replace(/\D/g, '').replace(/^0/, '380'),
+        id, role: 'client', name: name || 'Новий клієнт', phone: '+380' + String(phone).replace(/\D/g, '').slice(-9),
         email: '', bonus: 0, spent: 0, ref: 'HG-' + (name || 'NEW').replace(/[^A-Za-zА-Яа-яІіЇїЄєҐґ]/g, '').slice(0, 4).toUpperCase() + Math.floor(Math.random() * 9 + 1),
         joined: new Date().toISOString(), notify: { viber: true, sms: true, email: false }
       };
@@ -172,11 +172,13 @@
     App.renderTopbar();
   });
   App.on('burger', () => document.getElementById('nav').classList.toggle('open'));
+  // the mobile menu closes on any tap outside it
+  document.addEventListener('click', ev => { if (!ev.target.closest('#nav, [data-act="burger"]')) document.getElementById('nav')?.classList.remove('open'); }, true);
   App.on('go', el => App.go(el.dataset.to));
   App.on('modal-close', () => closeModal());
   App.on('modal-bg', (el, ev) => { if (ev.target === el) closeModal(); });
   App.on('login', () => App.loginModal('phone'));
-  App.on('photo-view', el => UI.modal({ title: 'Фото з огляду', wide: true, body: `<img src="${el.dataset.src}" alt="Фото з огляду" style="width:100%;border-radius:var(--r)">` }));
+  App.on('photo-view', el => UI.modal({ title: 'Фото з огляду', wide: true, body: `<img src="${esc(el.dataset.src)}" alt="Фото з огляду" style="width:100%;border-radius:var(--r)">` }));
   App.on('logout', () => {
     Store.session.role = 'guest'; Store.session.userId = null; Store.saveSession();
     toast('Ви вийшли з кабінету'); App.go('home');
@@ -276,13 +278,13 @@
   window.addEventListener('storage', ev => {
     if (ev.key !== Store.KEY || !ev.newValue) return;
     try { Store.db = JSON.parse(ev.newValue); } catch (e) { return; }
+    Store.checkSession();
     const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (!typing && !UI.modalOpen()) App.render(App.current, true);
     else if (window.Chat) Chat.render();
   });
 
   document.addEventListener('DOMContentLoaded', () => {
-    try { const t = localStorage.getItem('hg_theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* default theme */ }
     Store.load();
     const start = location.hash.slice(1);
     App.render(App.routes[start] ? start : 'home');

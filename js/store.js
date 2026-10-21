@@ -6,6 +6,7 @@
   const SESSION_KEY = 'hg_demo_session_v1';
 
   const pad = n => String(n).padStart(2, '0');
+  const parseDay = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
   const dayStr = (offset = 0) => {
     const d = new Date();
     d.setHours(12, 0, 0, 0);
@@ -322,6 +323,7 @@
         phone: '+380 44 100 10 00', address: 'Київ, вул. Автозаводська, 100', hours: [['Пн–Пт', '08:00–20:00'], ['Сб', '09:00–18:00'], ['Нд', '10:00–16:00']]
       },
       services, masters, bays, users, cars, orders, bonusTx, reviews, promos, chats,
+      seededOn: dayStr(0),
       seq: { order: Math.max(no, 24117) + 80, tx: 100, user: 100, car: 100, svc: 100, review: 100, item: 100, promo: 10, part: pn + 100 }
     };
   }
@@ -342,10 +344,42 @@
       if (!this.db || this.db.version !== 3) { this.db = seed(); this.save(); }
       try { const s = ls.get(SESSION_KEY); if (s) this.session = JSON.parse(s); } catch (e) { /* default guest */ }
       if (!this.session.guestId) this.session.guestId = 'g-' + Math.random().toString(36).slice(2, 8);
+      this.freshen();
+      this.checkSession();
     },
     save() { ls.set(KEY, JSON.stringify(this.db)); },
     saveSession() { ls.set(SESSION_KEY, JSON.stringify(this.session)); },
-    reset() { this.db = seed(); this.save(); },
+    reset() { this.db = seed(); this.save(); this.checkSession(); },
+    // A session can point to a client or master that no longer exists (after a demo reset) — fall back to guest
+    checkSession() {
+      const s = this.session;
+      const ok = s.role === 'guest' || s.role === 'admin' || (s.role === 'client' && this.user(s.userId)) || (s.role === 'master' && this.master(s.masterId));
+      if (!ok) { s.role = 'guest'; s.userId = null; s.masterId = null; this.saveSession(); }
+    },
+    // Demo data is relative to the day it was created. On a later day, shift every date forward
+    // so "today" on the workshop board stays today — the viewer's own changes are kept.
+    freshen() {
+      const today = dayStr(0);
+      const from = this.db.seededOn || today;
+      const days = Math.round((parseDay(today) - parseDay(from)) / 864e5);
+      this.db.seededOn = today;
+      if (days > 0) {
+        const shiftDay = v => { const d = parseDay(v); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+        const walk = (o, key) => {
+          if (Array.isArray(o)) return o.forEach(x => walk(x));
+          if (!o || typeof o !== 'object') return;
+          for (const k of Object.keys(o)) {
+            const v = o[k];
+            if (k === 'birthday' || k === 'seededOn') continue;
+            if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) o[k] = new Date(new Date(v).getTime() + days * 864e5).toISOString();
+            else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) o[k] = shiftDay(v);
+            else if (v && typeof v === 'object') walk(v);
+          }
+        };
+        walk(this.db);
+      }
+      this.save();
+    },
     next(kind) { return ++this.db.seq[kind]; },
 
     // ---- lookups ----
@@ -449,6 +483,9 @@
         o.closed = true;
         const u = this.user(o.userId);
         if (u) {
+          // the bill may have shrunk since points were reserved (declined parts, a discount): return the excess
+          const cap = Math.min(o.total, Math.floor(o.total * this.db.settings.maxPayPct / 100));
+          if (o.useBonus > cap) { u.bonus += o.useBonus - cap; o.useBonus = cap; }
           // points were reserved (taken off the balance) when the client chose to use them
           if (o.useBonus) this.addTx(u.id, -o.useBonus, 'spend', `Оплата балами · ${o.id}`, false);
           const pay = o.total - (o.useBonus || 0);
