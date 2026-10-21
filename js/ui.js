@@ -115,5 +115,28 @@
   }
   const modalOpen = () => !!document.getElementById('modal-root').innerHTML;
 
-  window.UI = { esc, money, num, fmtDay, fmtTime, fmtStamp, fmtPhone, dur, initials, plural, icon, statusPill, plate, stars, odometer, carName, toast, modal, closeModal, modalOpen, parseDay, WD, MONTHS };
+  // Inspection photo: thumbnail that opens full size
+  const photoThumb = it => it.photo ? `<button class="ph-thumb" data-act="photo-view" data-src="${esc(it.photo)}" aria-label="Фото: ${esc(it.name)}"><img src="${esc(it.photo)}" alt=""></button>` : '';
+  // Shrink a phone photo before storing it (max 720px, JPEG)
+  function compressImage(file, max = 720) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = reject;
+      r.onload = () => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          const k = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', .72));
+        };
+        img.src = r.result;
+      };
+      r.readAsDataURL(file);
+    });
+  }
+
+  window.UI = { esc, money, num, fmtDay, fmtTime, fmtStamp, fmtPhone, dur, initials, plural, icon, statusPill, plate, stars, odometer, carName, toast, modal, closeModal, modalOpen, parseDay, WD, MONTHS, photoThumb, compressImage };
 })();

@@ -127,8 +127,8 @@
         const v = draft['p:' + l.id];
         const optBtn = (key, title, o2) => `<button class="opt ${v === key ? 'on' : ''} ${key === 'no' ? 'neg' : ''}" data-act="dec" data-order="${o.id}" data-item="p:${l.id}" data-v="${key}"><span class="small muted">${title}</span>${o2 ? `<b>${money(o2.price * (l.qty || 1))}</b><span class="small">${esc(o2.brand)} · ${o2.stock ? 'на складі' : esc(o2.eta || 'під замовлення')}</span>` : ''}</button>`;
         return `<div class="part-row">
-          <div style="min-width:0"><b>${esc(l.name)}</b>${(l.qty || 1) > 1 ? ` <span class="mono">× ${l.qty}</span>` : ''}<div class="meta">${l.source === 'client' ? 'запчастина клієнта' : `${esc(opt.brand)} ${esc(opt.code)}`}</div></div>
-          <div class="pr">${l.source === 'client' ? '<span class="muted">ваша</span>' : quote && !v ? `<span class="muted">від ${money(Math.min(l.price, l.alt?.price ?? l.price) * (l.qty || 1))}</span>` : l.approved === false ? '<span class="muted">—</span>' : money(Store.partCost(l))}<br><span class="pill ${PART_TONE(l.status)}">${esc(Store.partStatus(l.status).short)}</span></div>
+          <div style="min-width:0"><b>${esc(l.name)}</b>${(l.qty || 1) > 1 ? ` <span class="mono">× ${l.qty}</span>` : ''}<div class="meta">${l.source === 'client' ? 'запчастина клієнта' : l.status === 'request' ? 'майстер запросив — підбираємо ціну' : `${esc(opt.brand)} ${esc(opt.code)}`}</div></div>
+          <div class="pr">${l.source === 'client' ? '<span class="muted">ваша</span>' : l.status === 'request' ? '<span class="muted">—</span>' : quote && !v ? `<span class="muted">від ${money(Math.min(l.price, l.alt?.price ?? l.price) * (l.qty || 1))}</span>` : l.approved === false ? '<span class="muted">—</span>' : money(Store.partCost(l))}<br><span class="pill ${PART_TONE(l.status)}">${esc(Store.partStatus(l.status).short)}</span></div>
           ${quote && isApproval ? `<div class="opts">${optBtn('main', l.alt ? 'Оригінал / основний' : 'Замовити', { brand: l.brand, price: l.price, stock: l.stock, eta: l.eta })}${l.alt ? optBtn('alt', 'Аналог', l.alt) : ''}${optBtn('own', 'Привезу свою')}${optBtn('no', 'Не треба')}</div>` : ''}
           ${!quote && ['ordered', 'to_order'].includes(l.status) && opt.eta ? `<div class="meta" style="grid-column:1/-1">Очікуємо: ${esc(opt.eta)}</div>` : ''}
         </div>`;
@@ -170,7 +170,7 @@
       <div class="row small muted"><span><span class="pill bad">критично</span></span><span><span class="pill warn">можна відкласти</span></span><span><span class="pill ok">в нормі</span></span></div>
       <div class="insp">${o.items.map(i => {
         const dec = draft[i.id] ?? i.decision;
-        return `<div class="insp-item"><span class="sev ${i.sev}"></span><div><b>${esc(i.name)}</b><p>${esc(i.note)}${i.price ? ` · <span class="mono">${money(i.price)}</span>` : ''}</p></div>
+        return `<div class="insp-item"><span class="sev ${i.sev}"></span><div><b>${esc(i.name)}</b><p>${esc(i.note)}${i.price ? ` · <span class="mono">${money(i.price)}</span>` : ''}</p>${UI.photoThumb(i)}</div>
           <div class="act">${i.sev === 'green' ? '<span class="pill ok">OK</span>' : isApproval ? `<div class="seg" role="group" aria-label="Рішення"><button class="yes ${dec === 'yes' ? 'on' : ''}" data-act="dec" data-order="${o.id}" data-item="${i.id}" data-v="yes">Робити</button><button class="no ${dec === 'no' ? 'on' : ''}" data-act="dec" data-order="${o.id}" data-item="${i.id}" data-v="no">Пізніше</button></div>` : dec === 'yes' ? '<span class="pill ok">погоджено</span>' : dec === 'no' ? '<span class="pill">відкладено</span>' : ''}</div></div>`;
       }).join('')}</div></div>` : '';
 
@@ -207,6 +207,7 @@
 
   App.on('order-open', el => {
     if (Store.session.role === 'admin') { App.adminOrder(el.dataset.id); return; }
+    if (Store.session.role === 'master') { App.masterOrder(el.dataset.id); return; }
     if (Store.session.role !== 'client') { App.loginModal(); return; }
     orderModal(el.dataset.id);
   });

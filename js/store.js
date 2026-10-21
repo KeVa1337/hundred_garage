@@ -2,7 +2,7 @@
    In the demo everything lives in the browser (localStorage, with in-memory fallback).
    In production this module is replaced by API calls; the data shapes stay the same. */
 (function () {
-  const KEY = 'hg_demo_v2';
+  const KEY = 'hg_demo_v3';
   const SESSION_KEY = 'hg_demo_session_v1';
 
   const pad = n => String(n).padStart(2, '0');
@@ -39,9 +39,10 @@
 
   const FLOW = ['new', 'confirmed', 'accepted', 'diagnostics', 'approval', 'parts', 'repair', 'qc', 'ready', 'done'];
 
-  // Part line statuses. Supplied by the service: quote → to_order → ordered → in_stock → installed.
+  // Part line statuses. Supplied by the service: request (from a master) → quote → to_order → ordered → in_stock → installed.
   // Brought by the client: awaiting → received → installed.
   const PART_STATUSES = [
+    { id: 'request', name: 'Запит майстра — підбираємо ціну', short: 'Запит', tone: 'info' },
     { id: 'quote', name: 'Чекає вашого рішення', short: 'Пропозиція', tone: 'bad' },
     { id: 'to_order', name: 'Треба замовити', short: 'Замовити', tone: 'info' },
     { id: 'ordered', name: 'Замовлено, в дорозі', short: 'В дорозі', tone: 'warn' },
@@ -106,10 +107,10 @@
     ].map(([id, cat, name, price, dur, desc, popular]) => ({ id, cat, name, price, dur, desc, popular, active: true }));
 
     const masters = [
-      { id: 'm1', name: 'Андрій Мельник', role: 'Старший майстер, діагност', exp: 14, rating: 4.9, jobs: 2310 },
-      { id: 'm2', name: 'Тарас Бондар', role: 'Ходова та гальма', exp: 9, rating: 4.8, jobs: 1640 },
-      { id: 'm3', name: 'Ігор Савчук', role: 'Двигуни та ГРМ', exp: 17, rating: 5.0, jobs: 2980 },
-      { id: 'm4', name: 'Марія Ткаченко', role: 'Автоелектрика, кондиціонери', exp: 7, rating: 4.9, jobs: 1120 }
+      { id: 'm1', name: 'Андрій Мельник', role: 'Старший майстер, діагност', exp: 14, rating: 4.9, jobs: 2310, login: 'andrii', payPct: 45, adjustments: [], payouts: [] },
+      { id: 'm2', name: 'Тарас Бондар', role: 'Ходова та гальма', exp: 9, rating: 4.8, jobs: 1640, login: 'taras', payPct: 40, adjustments: [], payouts: [] },
+      { id: 'm3', name: 'Ігор Савчук', role: 'Двигуни та ГРМ', exp: 17, rating: 5.0, jobs: 2980, login: 'ihor', payPct: 45, adjustments: [], payouts: [] },
+      { id: 'm4', name: 'Марія Ткаченко', role: 'Автоелектрика, кондиціонери', exp: 7, rating: 4.9, jobs: 1120, login: 'maria', payPct: 40, adjustments: [], payouts: [] }
     ];
     const bays = [
       { id: 'b1', name: 'Пост 1', kind: 'Діагностика / ТО' },
@@ -150,7 +151,8 @@
       const car = cars.find(c => c.id === o.carId);
       const ord = Object.assign({
         id: 'HG-' + (no++), userId: car.userId, comment: '', items: [], parts: 0, useBonus: 0, earned: 0,
-        waitOnSite: false, createdAt: isoAt(o.dayOffset - 2, 18), history: [], partsPref: 'service', discount: null
+        waitOnSite: false, createdAt: isoAt(o.dayOffset - 2, 18), history: [], partsPref: 'service', discount: null,
+        work: { spent: 0, running: null }, masterNote: ''
       }, o);
       ord.date = dayStr(o.dayOffset);
       ord.labor = svcPrice(ord.services, car.cls);
@@ -206,7 +208,8 @@
 
     // Today — the live workshop board
     const today = [
-      { carId: 'c1', services: ['s5', 's2'], time: '09:00', bay: 'b2', master: 'm2', status: 'approval', mileage: 148200,
+      { carId: 'c1', services: ['s5', 's2'], time: '09:00', bay: 'b2', master: 'm2', status: 'approval', mileage: 148200, work: { spent: 45, running: null },
+        masterNote: 'Пильовик лівого ШРУСа почав тріскатися — запропонувати на наступному ТО',
         comment: 'Стукіт спереду справа на нерівностях',
         parts: [
           part({ name: 'Масло моторне 5W-30, 4,5 л', brand: 'Castrol EDGE', code: '15669E', price: 1650 }),
@@ -225,7 +228,7 @@
           { id: 'i4', name: 'Щітки склоочисника — сліди на склі', sev: 'yellow', price: 560, note: 'Щітки Bosch Aerotwin з установкою', decision: null },
           { id: 'i5', name: 'Шини, тиск, освітлення', sev: 'green', price: 0, note: 'В нормі', decision: null }
         ] },
-      { carId: 'c3', services: ['s14'], time: '09:00', bay: 'b3', master: 'm3', status: 'repair', mileage: 189000,
+      { carId: 'c3', services: ['s14'], time: '09:00', bay: 'b3', master: 'm3', status: 'repair', mileage: 189000, work: { spent: 70, running: isoAt(0, 10, 30) },
         parts: [part({ name: 'Комплект ГРМ з помпою', brand: 'ContiTech', code: 'CT1139WP2', price: 6900, status: 'installed' }), part({ name: 'Антифриз G13, 5 л', brand: 'VAG', code: 'G013A8JM1', price: 900 })] },
       { carId: 'c5', services: ['s12'], time: '15:00', bay: 'b2', master: 'm2', status: 'parts', mileage: 54800, comment: 'Биття керма при гальмуванні',
         parts: [
@@ -233,10 +236,12 @@
           part({ name: 'Колодки гальмівні передні', brand: 'Brembo', code: 'P 06 099', price: 3400, stock: false, status: 'ordered', eta: 'завтра до 11:00' }),
           part({ name: 'Датчик зносу колодок', brand: 'BMW', code: '34356890791', price: 0, source: 'client', status: 'received', stock: false })
         ] },
-      { carId: 'c8', services: ['s1'], time: '10:00', bay: 'b1', master: 'm1', status: 'diagnostics', parts: 0, mileage: 214500, comment: 'Горить check engine' },
-      { carId: 'c6', services: ['s24', 's19'], time: '11:00', bay: 'b4', master: 'm2', status: 'qc', parts: 0, mileage: 131000 },
+      { carId: 'c8', services: ['s1'], time: '10:00', bay: 'b1', master: 'm1', status: 'diagnostics', mileage: 214500, comment: 'Горить check engine', work: { spent: 25, running: null },
+        items: [{ id: 'i6', name: 'Помилка P2200 — датчик NOx, обрив ланцюга', sev: 'red', price: 900, note: 'Робота з заміни датчика', decision: null }],
+        parts: [part({ name: 'Датчик NOx', qty: 1, price: 0, stock: false, status: 'request', approved: null, note: 'Ford Transit Custom 2.0 EcoBlue 2019, VIN у картці', requestedBy: 'm1' })] },
+      { carId: 'c6', services: ['s24', 's19'], time: '11:00', bay: 'b4', master: 'm2', status: 'qc', parts: 0, mileage: 131000, work: { spent: 55, running: null } },
       { carId: 'c4', services: ['s22'], time: '14:00', bay: 'b1', master: 'm4', status: 'confirmed', parts: 0, mileage: 97300 },
-      { carId: 'c7', services: ['s4'], time: '16:00', bay: 'b1', master: 'm1', status: 'new', parts: 0, mileage: 28700 }
+      { carId: 'c7', services: ['s4'], time: '16:00', bay: 'b1', master: null, status: 'new', parts: 0, mileage: 28700 }
     ];
     today.forEach((t, i) => {
       const o = mk(Object.assign({ dayOffset: 0 }, t));
@@ -247,10 +252,18 @@
     [
       { carId: 'c2', services: ['s19'], dayOffset: 3, time: '12:00', bay: 'b4', master: 'm2', status: 'confirmed', mileage: 61400 },
       { carId: 'c5', services: ['s5'], dayOffset: 1, time: '10:00', bay: 'b1', master: 'm1', status: 'confirmed', mileage: 54800 },
-      { carId: 'c3', services: ['s24'], dayOffset: 1, time: '15:00', bay: 'b4', master: 'm2', status: 'new', mileage: 189000 },
+      { carId: 'c3', services: ['s24'], dayOffset: 1, time: '15:00', bay: 'b4', master: null, status: 'new', mileage: 189000 },
       { carId: 'c4', services: ['s8'], dayOffset: 2, time: '09:00', bay: 'b2', master: 'm2', status: 'confirmed', mileage: 97300, partsPref: 'own',
         comment: 'Амортизатори куплю сам', parts: [part({ name: 'Амортизатори передні (пара)', brand: 'KYB Excel-G', code: '339289', price: 0, source: 'client', status: 'awaiting', stock: false })] }
     ].forEach(t => { const o = mk(Object.assign({ parts: 0 }, t)); o.history = histTo(t.status, t.dayOffset, 9); });
+    // Payroll history: each master was paid out up to 15 days ago
+    masters.forEach(m => {
+      const amt = orders.filter(o => o.master === m.id && o.status === 'done' && o.date < dayStr(-15))
+        .reduce((s, o) => s + Math.round((o.labor + o.items.filter(i => i.decision === 'yes').reduce((a, i) => a + i.price, 0)) * m.payPct / 100), 0);
+      m.payouts.push({ at: isoAt(-15, 18), amount: amt, note: 'Виплата за попередній період' });
+    });
+    masters[1].adjustments.push({ at: isoAt(-4, 18), amount: 500, note: 'Премія: 5 відгуків з оцінкою 5★' });
+    masters[1].adjustments.push({ at: isoAt(-2, 18), amount: -200, note: 'Повторний заїзд: не затягнуто хомут' });
     // Personal discount for the top-level client is applied to every new order
     orders.filter(o => o.userId === 'u4' && o.status !== 'done').forEach(o => { o.discount = { type: 'pct', value: 5, target: 'labor', reason: 'Персональна знижка клієнта' }; Store.recalc(o); });
 
@@ -297,7 +310,7 @@
     ];
 
     return {
-      version: 2,
+      version: 3,
       settings: {
         levels: [
           { id: 'start', name: 'Старт', min: 0, cashback: 3 },
@@ -326,7 +339,7 @@
     session: { role: 'guest', userId: null, guestId: null },
     load() {
       try { const raw = ls.get(KEY); if (raw) this.db = JSON.parse(raw); } catch (e) { this.db = null; }
-      if (!this.db || this.db.version !== 2) { this.db = seed(); this.save(); }
+      if (!this.db || this.db.version !== 3) { this.db = seed(); this.save(); }
       try { const s = ls.get(SESSION_KEY); if (s) this.session = JSON.parse(s); } catch (e) { /* default guest */ }
       if (!this.session.guestId) this.session.guestId = 'g-' + Math.random().toString(36).slice(2, 8);
     },
@@ -338,6 +351,7 @@
     // ---- lookups ----
     user(id) { return this.db.users.find(u => u.id === id); },
     me() { return this.session.role === 'client' ? this.user(this.session.userId) : null; },
+    meMaster() { return this.session.role === 'master' ? this.master(this.session.masterId) : null; },
     car(id) { return this.db.cars.find(c => c.id === id); },
     carsOf(uid) { return this.db.cars.filter(c => c.userId === uid); },
     order(id) { return this.db.orders.find(o => o.id === id); },
@@ -362,7 +376,34 @@
     partStatus(id) { return PART_STATUSES.find(s => s.id === id) || PART_STATUSES[0]; },
     // Price of a part line with the option the client chose (main offer or the alternative)
     partOpt(l) { return l.choice === 'alt' && l.alt ? l.alt : { brand: l.brand, code: l.code, price: l.price, stock: l.stock, eta: l.eta }; },
-    partCost(l) { return l.source === 'service' && l.approved !== false ? this.partOpt(l).price * (l.qty || 1) : 0; },
+    // Only parts the client has agreed to (or that need no approval) are counted in the bill
+    partCost(l) { return l.source === 'service' && l.approved === true ? this.partOpt(l).price * (l.qty || 1) : 0; },
+    workMinutes(o) {
+      const w = o.work || { spent: 0, running: null };
+      return Math.round(w.spent + (w.running ? (Date.now() - new Date(w.running)) / 60000 : 0));
+    },
+    normMinutes(o) { return o.services.reduce((s, id) => s + (this.service(id)?.dur || 0), 0); },
+    // Master pay for a job: admin override, otherwise the master's % of the works (labor + approved extra works)
+    masterPay(o) {
+      if (!o.master) return 0;
+      if (o.pay && o.pay.amount !== null && o.pay.amount !== undefined) return o.pay.amount;
+      const m = this.master(o.master);
+      return Math.round(this.breakdown(o).works * (m?.payPct || 0) / 100);
+    },
+    // Earned = closed jobs + bonuses/penalties; balance = earned − payouts
+    masterLedger(mid, from) {
+      const m = this.master(mid);
+      const jobs = this.db.orders.filter(o => o.master === mid && o.status === 'done' && (!from || o.date >= from));
+      const adj = (m.adjustments || []).filter(a => !from || a.at.slice(0, 10) >= from);
+      const earned = jobs.reduce((s, o) => s + this.masterPay(o), 0) + adj.reduce((s, a) => s + a.amount, 0);
+      const allJobs = this.db.orders.filter(o => o.master === mid && o.status === 'done').reduce((s, o) => s + this.masterPay(o), 0)
+        + (m.adjustments || []).reduce((s, a) => s + a.amount, 0);
+      const paid = (m.payouts || []).reduce((s, p) => s + p.amount, 0);
+      return { jobs, adj, earned, balance: allJobs - paid, paid };
+    },
+    stopWork(o) {
+      if (o.work?.running) { o.work.spent = this.workMinutes(o); o.work.running = null; }
+    },
     // Full cost breakdown: works by price list + approved extra works + parts − discount
     breakdown(o) {
       const extras = (o.items || []).filter(i => i.decision === 'yes').reduce((s, i) => s + i.price, 0);
@@ -401,6 +442,8 @@
     setStatus(o, status) {
       if (o.status === status) return;
       o.status = status;
+      // the work timer runs only while the car is actually being worked on
+      if (['approval', 'parts', 'qc', 'ready', 'done', 'cancelled'].includes(status)) this.stopWork(o);
       o.history.push({ status, at: new Date().toISOString() });
       if (status === 'done' && !o.closed) {
         o.closed = true;

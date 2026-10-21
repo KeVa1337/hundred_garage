@@ -57,7 +57,7 @@
   function render() {
     const box = document.getElementById('chat');
     if (!box) return;
-    if (Store.session.role === 'admin') { box.innerHTML = ''; return; }
+    if (Store.session.role === 'admin' || Store.session.role === 'master') { box.innerHTML = ''; return; }
     const c = current(false);
     const unread = c?.unreadClient || 0;
     if (open && c && c.unreadClient) { c.unreadClient = 0; Store.save(); }

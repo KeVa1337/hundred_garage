@@ -7,7 +7,7 @@
 
   const orderDur = o => o.services.reduce((s, id) => s + (Store.service(id)?.dur || 30), 0);
 
-  const partsTodo = () => S().orders.filter(o => !['done', 'cancelled'].includes(o.status)).reduce((n, o) => n + (o.parts || []).filter(l => l.status === 'to_order').length, 0);
+  const partsTodo = () => S().orders.filter(o => !['done', 'cancelled'].includes(o.status)).reduce((n, o) => n + (o.parts || []).filter(l => ['request', 'to_order'].includes(l.status)).length, 0);
   function shell(active, content) {
     const newCnt = S().orders.filter(o => o.status === 'new').length;
     const unread = S().chats.reduce((s, c) => s + (c.unreadAdmin || 0), 0);
@@ -19,6 +19,7 @@
         ${link('admin', 'board', 'Панель')}
         ${link('admin-orders', 'list', 'Замовлення', newCnt)}
         ${link('admin-parts', 'truck', 'Запчастини', partsTodo())}
+        ${link('admin-staff', 'wrench', 'Майстри')}
         ${link('admin-clients', 'users', 'Клієнти')}
         ${link('admin-services', 'wrench', 'Послуги і ціни')}
         ${link('admin-chat', 'chat', 'Чат', unread)}
@@ -179,13 +180,14 @@
     App.refresh();
   });
 
-  function notifyClient(o, text) {
+  function notifyClient(o, text, by = 'Hundred Garage') {
     const u = Store.user(o.userId);
     if (!u) return;
     const c = Store.chatFor(u.id, u.name, u.id);
-    c.messages.push({ from: 'admin', text, at: new Date().toISOString(), by: 'Hundred Garage' });
+    c.messages.push({ from: 'admin', text, at: new Date().toISOString(), by });
     c.unreadClient++;
   }
+  App.notifyClient = notifyClient;
   const STATUS_MSG = {
     confirmed: o => `Запис ${o.id} підтверджено: ${fmtDay(o.date, true)} о ${o.time}.`,
     accepted: o => `Авто прийняли, майстер починає огляд. Стежте за статусом у кабінеті.`,
@@ -194,7 +196,7 @@
     ready: o => `Авто готове! До сплати ${money(o.total - (o.useBonus || 0))}. Чекаємо вас до 20:00.`,
     done: o => `Дякуємо за візит! Нараховано ${num(o.earned)} балів. Будемо раді вашому відгуку.`
   };
-  const SERVICE_PART_ST = ['quote', 'to_order', 'ordered', 'in_stock', 'installed', 'declined'];
+  const SERVICE_PART_ST = ['request', 'quote', 'to_order', 'ordered', 'in_stock', 'installed', 'declined'];
   const CLIENT_PART_ST = ['awaiting', 'received', 'installed', 'declined'];
   const waitingParts = o => (o.parts || []).some(l => l.approved !== false && ['quote', 'to_order', 'ordered', 'awaiting'].includes(l.status));
 
@@ -204,6 +206,7 @@
       <div class="row" style="justify-content:space-between"><h3>Запчастини</h3>
         <label class="row small" style="gap:8px">Хто постачає: <select class="input" style="width:auto;min-height:34px;padding:4px 8px" data-change="adm-pref" data-id="${o.id}" aria-label="Хто постачає запчастини">${Object.entries(Store.PARTS_PREF).map(([k, t]) => `<option value="${k}" ${o.partsPref === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label></div>
       ${lines.length ? `<div>${lines.map(l => {
+        if (l.status === 'request') return requestRow(o, l);
         const opt = Store.partOpt(l);
         const sts = l.source === 'client' ? CLIENT_PART_ST : SERVICE_PART_ST;
         return `<div class="part-edit">
@@ -240,6 +243,35 @@
     </div>`;
   }
 
+  // A master asked for a part: the admin finds it, prices it (optionally with an analog) and it becomes a quote for the client
+  function requestRow(o, l) {
+    const m = Store.master(l.requestedBy);
+    return `<div class="part-edit" style="grid-template-columns:minmax(0,1fr) auto">
+      <div style="min-width:0"><b>${esc(l.name)}</b>${(l.qty || 1) > 1 ? ` <span class="mono">× ${l.qty}</span>` : ''} <span class="pill info">запит${m ? ' · ' + esc(m.name.split(' ')[0]) : ''}</span>${l.note ? `<div class="small muted">${esc(l.note)}</div>` : ''}</div>
+      <button class="icon-btn" style="width:34px;height:34px" data-act="adm-part-del" data-id="${o.id}" data-p="${l.id}" aria-label="Видалити запит">${icon('trash', 'width="16" height="16"')}</button>
+      <form class="grid" data-form="adm-price-req" style="grid-column:1/-1;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));align-items:end;gap:8px"><input type="hidden" name="id" value="${o.id}"><input type="hidden" name="p" value="${l.id}">
+        <div class="field"><label>Бренд</label><input class="input" name="brand" required placeholder="Bosch"></div>
+        <div class="field"><label>Артикул</label><input class="input mono" name="code"></div>
+        <div class="field"><label>Ціна, ₴</label><input class="input mono" name="price" inputmode="numeric" required></div>
+        <div class="field"><label>Термін</label><input class="input" name="eta" placeholder="на складі"></div>
+        <div class="field"><label>Аналог: бренд</label><input class="input" name="altBrand"></div>
+        <div class="field"><label>Аналог: ціна</label><input class="input mono" name="altPrice" inputmode="numeric"></div>
+        <button class="btn sm primary" type="submit">Оцінити → клієнту</button>
+      </form></div>`;
+  }
+  App.form('adm-price-req', (f, d) => {
+    const o = Store.order(d.id);
+    const l = o.parts.find(x => x.id === d.p);
+    const price = parseInt(d.price, 10);
+    if (!price) { toast('Вкажіть ціну запчастини'); return; }
+    const eta = d.eta.trim();
+    Object.assign(l, {
+      brand: d.brand.trim(), code: d.code.trim(), price, stock: !eta || /склад/i.test(eta), eta: eta || 'на складі', status: 'quote', approved: null,
+      alt: d.altBrand.trim() && parseInt(d.altPrice, 10) ? { brand: d.altBrand.trim(), code: '', price: parseInt(d.altPrice, 10), stock: true, eta: 'на складі' } : null
+    });
+    afterChange(o, 'Ціну додано — тепер позицію можна надіслати клієнту на погодження');
+  });
+
   function discountEditor(o) {
     const d = o.discount;
     const u = Store.user(o.userId);
@@ -256,6 +288,31 @@
     </div>`;
   }
 
+  // Master pay for this job: automatic % of works or a manual amount
+  function payEditor(o) {
+    const m = Store.master(o.master);
+    if (!m) return `<div class="stack"><h3>Оплата майстру</h3><p class="small muted">Призначте майстра — і тут з'явиться його оплата за цю роботу.</p></div>`;
+    const manual = o.pay && o.pay.amount !== null && o.pay.amount !== undefined;
+    const auto = Math.round(Store.breakdown(o).works * m.payPct / 100);
+    return `<div class="stack">
+      <div class="row" style="justify-content:space-between"><h3>Оплата майстру</h3><span class="pill ${manual ? 'warn' : ''}">${manual ? 'вручну' : `авто · ${m.payPct}% від робіт`}</span></div>
+      <div class="row" style="justify-content:space-between"><span>${esc(m.name)}${o.status === 'done' ? '' : ' <span class="small muted">· нарахується після видачі авто</span>'}</span><b class="mono" style="font-size:1.25rem">${money(Store.masterPay(o))}</b></div>
+      <form class="grid" data-form="adm-pay" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end"><input type="hidden" name="id" value="${o.id}">
+        <div class="field"><label for="pay-amt">Сума майстру, ₴</label><input class="input mono" id="pay-amt" name="amount" inputmode="numeric" value="${manual ? o.pay.amount : ''}" placeholder="${auto} (авто)"></div>
+        <div class="field" style="grid-column:span 2"><label for="pay-note">Коментар (бачить майстер)</label><input class="input" id="pay-note" name="note" value="${esc(o.pay?.note || '')}" placeholder="Складна робота: закисли болти"></div>
+        <div class="row" style="gap:6px"><button class="btn" type="submit">Зберегти</button>${manual ? `<button class="btn ghost" type="button" data-act="adm-pay-auto" data-id="${o.id}">Авто</button>` : ''}</div>
+      </form></div>`;
+  }
+  App.form('adm-pay', (f, d) => {
+    const o = Store.order(d.id);
+    const raw = String(d.amount).trim();
+    const v = raw === '' ? null : parseInt(raw.replace(/\D/g, ''), 10);
+    if (raw !== '' && isNaN(v)) { toast('Вкажіть суму числом'); return; }
+    o.pay = { amount: v, note: d.note.trim() };
+    afterChange(o, v === null ? 'Оплата рахується автоматично' : `Майстру: ${money(v)}`);
+  });
+  App.on('adm-pay-auto', el => { const o = Store.order(el.dataset.id); o.pay = { amount: null, note: o.pay?.note || '' }; afterChange(o, 'Оплата рахується автоматично'); });
+
   // ---------- Order editor ----------
   function adminOrder(id) {
     const o = Store.order(id);
@@ -270,7 +327,7 @@
     modal({
       wide: true, title: `${o.id} · ${carName(car)}`,
       body: `<div class="row" style="justify-content:space-between;align-items:start">
-          <dl class="kv"><dt>Клієнт</dt><dd><b>${esc(u?.name || '—')}</b> · <span class="mono">${esc(UI.fmtPhone(u?.phone || ''))}</span></dd><dt>Авто</dt><dd>${esc(carName(car))}, ${car.year || ''} · ${plate(car.plate || '—')}</dd><dt>Запчастини</dt><dd>${esc(Store.PARTS_PREF[o.partsPref || 'service'])}</dd>${o.comment ? `<dt>Коментар</dt><dd>${esc(o.comment)}</dd>` : ''}${o.waitOnSite ? '<dt>Клієнт</dt><dd>чекає в клієнтській зоні</dd>' : ''}</dl>
+          <dl class="kv"><dt>Клієнт</dt><dd><b>${esc(u?.name || '—')}</b> · <span class="mono">${esc(UI.fmtPhone(u?.phone || ''))}</span></dd><dt>Авто</dt><dd>${esc(carName(car))}, ${car.year || ''} · ${plate(car.plate || '—')}</dd><dt>Запчастини</dt><dd>${esc(Store.PARTS_PREF[o.partsPref || 'service'])}</dd><dt>Час роботи</dt><dd class="mono">${UI.dur(Store.workMinutes(o) || 0)} з ${UI.dur(Store.normMinutes(o))} за нормою${o.work?.running ? ' · ▶ йде' : ''}</dd>${o.masterNote ? `<dt>Нотатка майстра</dt><dd>${esc(o.masterNote)}</dd>` : ''}${o.comment ? `<dt>Коментар</dt><dd>${esc(o.comment)}</dd>` : ''}${o.waitOnSite ? '<dt>Клієнт</dt><dd>чекає в клієнтській зоні</dd>' : ''}</dl>
           ${statusPill(o.status)}</div>
         <div class="stack"><span class="lbl">Статус — клієнт бачить зміни одразу</span>
           <div class="chips">${FLOW.map(s => `<button class="chip ${o.status === s ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="${s}">${esc(Store.status(s).short)}</button>`).join('')}<button class="chip ${o.status === 'cancelled' ? 'on' : ''}" data-act="adm-status" data-id="${o.id}" data-s="cancelled">Скасовано</button></div>
@@ -287,7 +344,7 @@
         </form>
         <div class="stack">
           <div class="row" style="justify-content:space-between"><h3>Огляд і додаткові роботи</h3><span class="small muted">Клієнт погоджує кожен пункт у кабінеті</span></div>
-          ${o.items.length ? `<div class="insp">${o.items.map(i => `<div class="insp-item"><span class="sev ${i.sev}"></span><div><b>${esc(i.name)}</b><p>${esc(i.note || '')}${i.price ? ` · <span class="mono">${money(i.price)}</span>` : ''}</p></div><div class="act">${i.sev === 'green' ? '' : i.decision === 'yes' ? '<span class="pill ok">погоджено</span>' : i.decision === 'no' ? '<span class="pill">відкладено</span>' : '<span class="pill warn">чекає</span>'}<button class="icon-btn" style="width:34px;height:34px" data-act="adm-item-del" data-id="${o.id}" data-item="${i.id}" aria-label="Видалити пункт">${icon('trash', 'width="16" height="16"')}</button></div></div>`).join('')}</div>` : '<p class="small muted">Пунктів ще немає. Додайте знахідки після діагностики.</p>'}
+          ${o.items.length ? `<div class="insp">${o.items.map(i => `<div class="insp-item"><span class="sev ${i.sev}"></span><div><b>${esc(i.name)}</b><p>${esc(i.note || '')}${i.price ? ` · <span class="mono">${money(i.price)}</span>` : ''}</p>${UI.photoThumb(i)}</div><div class="act">${i.sev === 'green' ? '' : i.decision === 'yes' ? '<span class="pill ok">погоджено</span>' : i.decision === 'no' ? '<span class="pill">відкладено</span>' : '<span class="pill warn">чекає</span>'}<button class="icon-btn" style="width:34px;height:34px" data-act="adm-item-del" data-id="${o.id}" data-item="${i.id}" aria-label="Видалити пункт">${icon('trash', 'width="16" height="16"')}</button></div></div>`).join('')}</div>` : '<p class="small muted">Пунктів ще немає. Додайте знахідки після діагностики.</p>'}
           <form class="grid" data-form="adm-item" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end">
             <input type="hidden" name="id" value="${o.id}">
             <div class="field" style="grid-column:span 2"><label for="ai-name">Знахідка / робота</label><input class="input" id="ai-name" name="name" placeholder="Напр.: пильовик ШРУСа — тріщина" required></div>
@@ -299,6 +356,7 @@
         ${partsEditor(o)}
         ${needsApproval && o.status !== 'approval' ? `<div class="note hz">${icon('wrench', 'width="20" height="20"')}<span>Є роботи або запчастини без рішення клієнта. <button class="link-btn" data-act="adm-status" data-id="${o.id}" data-s="approval">Надіслати клієнту на погодження</button></span></div>` : ''}
         ${discountEditor(o)}
+        ${payEditor(o)}
         <div class="jc-items"><div class="jc-line"><span>Роботи за прайсом</span><span>${money(bd.labor)}</span></div><div class="jc-line"><span>Погоджені додаткові роботи</span><span>${money(bd.extras)}</span></div><div class="jc-line"><span>Запчастини сервісу</span><span>${money(bd.parts)}</span></div>${bd.discount ? `<div class="jc-line" style="color:var(--ok)"><span>Знижка ${esc(Store.discountLabel(o.discount))}</span><span>−${money(bd.discount)}</span></div>` : ''}${o.useBonus ? `<div class="jc-line"><span>Клієнт оплачує балами</span><span>−${money(o.useBonus)}</span></div>` : ''}</div>
         <div class="jc-total"><span class="muted">До сплати</span><b>${money(bd.total - (o.useBonus || 0))}</b></div>`,
       foot: `${u ? `<button class="btn" data-act="adm-chat-with" data-id="${u.id}">${icon('chat', 'width="18" height="18"')} Написати клієнту</button><button class="btn" data-act="adm-client" data-id="${u.id}">Картка клієнта</button>` : ''}<button class="btn primary" data-act="modal-close">Закрити</button>`
@@ -315,15 +373,21 @@
     if (UI.modalOpen() && document.querySelector('.modal-head h3')?.textContent.startsWith(o.id)) adminOrder(o.id);
     App.render(App.current, true);
   }
-  App.on('adm-status', el => {
-    const o = Store.order(el.dataset.id);
-    const s = el.dataset.s;
-    const hasQuestions = o.items.some(i => i.sev !== 'green') || (o.parts || []).some(l => l.status === 'quote');
-    if (s === 'approval' && !hasQuestions) { toast('Спочатку додайте знахідки огляду або запчастини, які потрібно погодити'); return; }
+  // One status change routine for admin and masters: checks, side effects, client notification
+  App.applyStatus = (o, s) => {
+    const hasQuestions = o.items.some(i => i.sev !== 'green' && i.decision === null) || (o.parts || []).some(l => l.status === 'quote' && l.approved === null);
+    if (s === 'approval' && !hasQuestions) return 'Спочатку додайте знахідки огляду або оцінені запчастини, які потрібно погодити';
     if (s === 'cancelled' && o.useBonus && !o.closed) { Store.user(o.userId).bonus += o.useBonus; o.useBonus = 0; }
     if (s === 'done') (o.parts || []).forEach(l => { if (l.approved !== false && ['in_stock', 'received'].includes(l.status)) l.status = 'installed'; });
     Store.setStatus(o, s);
     if (STATUS_MSG[s]) notifyClient(o, STATUS_MSG[s](o));
+    return null;
+  };
+  App.on('adm-status', el => {
+    const o = Store.order(el.dataset.id);
+    const s = el.dataset.s;
+    const err = App.applyStatus(o, s);
+    if (err) { toast(err); return; }
     afterChange(o, `${o.id}: ${Store.status(s).name}${STATUS_MSG[s] ? ' · клієнта повідомлено' : ''}`);
   });
   App.form('adm-order', (f, d) => {
@@ -481,12 +545,80 @@
   App.on('ord-group', el => { App.state.ordGroup = el.dataset.g; App.render('admin-orders', true); });
   App.change('ord-q', el => { App.state.ordQ = el.value; App.render('admin-orders', true); });
 
+  // ---------- Staff & payroll ----------
+  const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+  App.route('admin-staff', {
+    area: 'admin', title: 'Майстри',
+    render() {
+      const ms = monthStart();
+      return shell('admin-staff', `
+        <div class="page-title"><div><h1>Майстри</h1><p class="small muted">Ставка — відсоток від робіт у замовленні (без запчастин). У кожному замовленні суму можна змінити вручну.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Майстер</th><th class="r">Ставка</th><th class="r">У роботі</th><th class="r">Закрито за місяць</th><th class="r">Нормо / факт, год</th><th class="r">Нараховано за місяць</th><th class="r">До виплати</th></tr></thead><tbody>
+        ${S().masters.map(m => {
+          const led = Store.masterLedger(m.id, ms);
+          const active = S().orders.filter(o => o.master === m.id && !['done', 'cancelled', 'new', 'confirmed'].includes(o.status)).length;
+          const norm = led.jobs.reduce((s, o) => s + Store.normMinutes(o), 0) / 60;
+          const fact = led.jobs.reduce((s, o) => s + (o.work?.spent || Store.normMinutes(o)), 0) / 60;
+          return `<tr class="click" data-act="adm-staff" data-id="${m.id}"><td><b>${esc(m.name)}</b><span class="sub">${esc(m.role)} · логін <span class="mono">${esc(m.login)}</span></span></td><td class="r mono">${m.payPct}%</td><td class="r mono">${active}</td><td class="r mono">${led.jobs.length}</td><td class="r mono">${norm.toFixed(1)} / ${fact.toFixed(1)}</td><td class="r mono">${money(led.earned)}</td><td class="r mono"><b>${money(led.balance)}</b></td></tr>`;
+        }).join('')}
+        </tbody></table></div>`);
+    }
+  });
+  function staffModal(id) {
+    const m = Store.master(id);
+    const ms = monthStart();
+    const led = Store.masterLedger(id, ms);
+    const scroll = document.querySelector('.modal')?.scrollTop;
+    modal({
+      wide: true, title: m.name,
+      body: `<div class="kpis">
+          <div class="kpi"><span>Нараховано за місяць</span><b>${money(led.earned)}</b><span class="delta">${led.jobs.length} ${plural(led.jobs.length, 'робота', 'роботи', 'робіт')}</span></div>
+          <div class="kpi"><span>До виплати</span><b>${money(led.balance)}</b><span class="delta">виплачено всього ${money(led.paid)}</span></div>
+          <div class="kpi"><span>Ставка</span><b>${m.payPct}%</b><span class="delta">від робіт</span></div>
+        </div>
+        <div class="grid g2" style="align-items:start;gap:24px">
+          <div class="stack">
+            <form class="row" data-form="adm-staff-pct" style="align-items:end"><input type="hidden" name="id" value="${m.id}"><div class="field" style="flex:1 1 140px"><label for="sp-pct">Ставка, % від робіт</label><input class="input mono" id="sp-pct" name="pct" inputmode="numeric" value="${m.payPct}"></div><button class="btn" type="submit">Зберегти</button></form>
+            <form class="stack" data-form="adm-staff-adj"><input type="hidden" name="id" value="${m.id}"><span class="lbl">Премія або штраф</span>
+              <div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px"><input class="input mono" name="amount" placeholder="+500 / −200" aria-label="Сума" required><input class="input" name="note" placeholder="Причина (бачить майстер)" aria-label="Причина" required></div>
+              <div><button class="btn" type="submit">Додати</button></div></form>
+            ${led.balance > 0 ? `<button class="btn primary" style="justify-self:start" data-act="adm-payout" data-id="${m.id}">Виплатити ${money(led.balance)}</button>` : '<span class="small muted">Заборгованості немає</span>'}
+            <span class="lbl">Премії, штрафи, виплати</span>
+            ${[...(m.adjustments || []).map(a => ({ ...a, k: 'adj' })), ...(m.payouts || []).map(p => ({ ...p, k: 'pay' }))].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10).map(x => `<div class="tx"><div><b>${x.k === 'pay' ? 'Виплата' : x.amount >= 0 ? 'Премія' : 'Штраф'}</b><br><small>${esc(x.note)} · ${fmtDay(x.at)}</small></div><span class="amt ${x.k === 'pay' ? '' : x.amount >= 0 ? 'plus' : 'minus'}">${x.k === 'pay' ? '' : x.amount >= 0 ? '+' : '−'}${num(Math.abs(x.amount))}</span></div>`).join('') || '<p class="small muted">Поки нічого</p>'}
+          </div>
+          <div class="stack"><span class="lbl">Роботи за місяць</span>
+            <div class="table-wrap"><table><tbody>${led.jobs.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map(o => `<tr class="click" data-act="adm-order" data-id="${o.id}"><td class="mono">${esc(o.id)}<span class="sub">${fmtDay(o.date)}</span></td><td>${esc(carName(Store.car(o.carId)))}<span class="sub">${o.services.map(x => esc(Store.service(x).name)).join(', ')}</span></td><td class="r mono">${money(Store.masterPay(o))}${o.pay?.amount != null ? '<span class="sub">вручну</span>' : ''}</td></tr>`).join('') || '<tr><td><div class="empty">Закритих робіт ще немає</div></td></tr>'}</tbody></table></div>
+          </div>
+        </div>`
+    });
+    const md = document.querySelector('.modal');
+    if (md && scroll) md.scrollTop = scroll;
+  }
+  App.on('adm-staff', el => staffModal(el.dataset.id));
+  App.form('adm-staff-pct', (f, d) => {
+    const v = parseInt(d.pct, 10);
+    if (isNaN(v) || v < 0 || v > 100) { toast('Ставка — від 0 до 100%'); return; }
+    Store.master(d.id).payPct = v; Store.save(); toast('Ставку збережено', 'ok'); staffModal(d.id); App.render(App.current, true);
+  });
+  App.form('adm-staff-adj', (f, d) => {
+    const v = parseInt(String(d.amount).replace(/−/g, '-').replace(/[^\d-]/g, ''), 10);
+    if (!v) { toast('Вкажіть суму, наприклад 500 або -200'); return; }
+    Store.master(d.id).adjustments.push({ at: new Date().toISOString(), amount: v, note: d.note.trim() });
+    Store.save(); toast(v > 0 ? 'Премію додано' : 'Штраф додано', 'ok'); staffModal(d.id); App.render(App.current, true);
+  });
+  App.on('adm-payout', el => {
+    const m = Store.master(el.dataset.id);
+    const bal = Store.masterLedger(m.id).balance;
+    m.payouts.push({ at: new Date().toISOString(), amount: bal, note: 'Виплата' });
+    Store.save(); toast(`Виплачено ${money(bal)}`, 'ok'); staffModal(m.id); App.render(App.current, true);
+  });
+
   // ---------- Parts supply ----------
-  const PART_GROUPS = [['to_order', 'Треба замовити'], ['ordered', 'В дорозі'], ['awaiting', 'Чекаємо від клієнтів'], ['quote', 'Чекають рішення клієнта'], ['in_stock', 'На складі']];
+  const PART_GROUPS = [['request', 'Запити майстрів'], ['to_order', 'Треба замовити'], ['ordered', 'В дорозі'], ['awaiting', 'Чекаємо від клієнтів'], ['quote', 'Чекають рішення клієнта'], ['in_stock', 'На складі']];
   App.route('admin-parts', {
     area: 'admin', title: 'Запчастини',
     render() {
-      const g = App.state.partGroup || 'to_order';
+      const g = App.state.partGroup || (S().orders.some(o => !['done', 'cancelled'].includes(o.status) && (o.parts || []).some(l => l.status === 'request')) ? 'request' : 'to_order');
       const rows = [];
       S().orders.filter(o => !['done', 'cancelled'].includes(o.status)).forEach(o => (o.parts || []).forEach(l => rows.push({ o, l })));
       const cnt = id => rows.filter(r => r.l.status === id).length;
@@ -496,15 +628,16 @@
       return shell('admin-parts', `
         <div class="page-title"><div><h1>Запчастини</h1><p class="small muted">Усі позиції з активних замовлень. Зміна статусу одразу видна клієнту, а коли прибуде останнє — замовлення само перейде в «Ремонт».</p></div></div>
         <div class="kpis" style="margin-bottom:20px">
+          <div class="kpi"><span>Запити майстрів</span><b>${cnt('request')}</b><span class="delta">треба підібрати й оцінити</span></div>
           <div class="kpi"><span>Треба замовити</span><b>${cnt('to_order')}</b><span class="delta">${money(sum('to_order'))}</span></div>
           <div class="kpi"><span>В дорозі</span><b>${cnt('ordered')}</b><span class="delta">${money(sum('ordered'))}</span></div>
           <div class="kpi"><span>Чекаємо від клієнтів</span><b>${cnt('awaiting')}</b><span class="delta">клієнти привозять свої</span></div>
         </div>
         <div class="chips" style="margin-bottom:16px">${PART_GROUPS.map(([id, t]) => `<button class="chip ${g === id ? 'on' : ''}" data-act="part-group" data-g="${id}">${t} <span class="mono">${cnt(id)}</span></button>`).join('')}</div>
         <div class="table-wrap"><table><thead><tr><th>Запчастина</th><th>Бренд · артикул</th><th class="r">К-сть</th><th class="r">Ціна</th><th>Замовлення</th><th>Статус</th></tr></thead><tbody>
-        ${list.map(({ o, l }) => { const opt = Store.partOpt(l); return `<tr><td><b>${esc(l.name)}</b>${opt.eta && !opt.stock ? `<span class="sub">${esc(opt.eta)}</span>` : ''}</td><td class="mono small">${l.source === 'client' ? 'від клієнта' : esc(opt.brand + ' ' + opt.code)}${l.alt && l.status === 'quote' ? `<span class="sub">або ${esc(l.alt.brand)} · ${money(l.alt.price)}</span>` : ''}</td><td class="r mono">${l.qty || 1}</td><td class="r mono">${l.source === 'client' ? '—' : money(opt.price * (l.qty || 1))}</td>
+        ${list.map(({ o, l }) => { const opt = Store.partOpt(l); return `<tr><td><b>${esc(l.name)}</b>${l.status === 'request' ? `<span class="sub">${esc(Store.master(l.requestedBy)?.name || 'майстер')}: ${esc(l.note || 'без коментаря')}</span>` : opt.eta && !opt.stock ? `<span class="sub">${esc(opt.eta)}</span>` : ''}</td><td class="mono small">${l.source === 'client' ? 'від клієнта' : esc(opt.brand + ' ' + opt.code)}${l.alt && l.status === 'quote' ? `<span class="sub">або ${esc(l.alt.brand)} · ${money(l.alt.price)}</span>` : ''}</td><td class="r mono">${l.qty || 1}</td><td class="r mono">${l.source === 'client' || l.status === 'request' ? '—' : money(opt.price * (l.qty || 1))}</td>
           <td><button class="link-btn" data-act="adm-order" data-id="${o.id}">${esc(o.id)}</button><span class="sub">${esc(carName(Store.car(o.carId)))} · ${fmtDay(o.date)}</span></td>
-          <td><select class="input" style="min-height:36px;padding:4px 8px" data-change="adm-part-status" data-id="${o.id}" data-p="${l.id}" aria-label="Статус">${sts.map(x => `<option value="${x}" ${l.status === x ? 'selected' : ''}>${esc(Store.partStatus(x).name)}</option>`).join('')}</select></td></tr>`; }).join('') || '<tr><td colspan="6"><div class="empty">У цій групі порожньо</div></td></tr>'}
+          <td>${l.status === 'request' ? `<button class="btn sm primary" data-act="adm-order" data-id="${o.id}">Оцінити</button>` : ''}<select class="input" style="min-height:36px;padding:4px 8px;${l.status === 'request' ? 'display:none' : ''}" data-change="adm-part-status" data-id="${o.id}" data-p="${l.id}" aria-label="Статус">${sts.map(x => `<option value="${x}" ${l.status === x ? 'selected' : ''}>${esc(Store.partStatus(x).name)}</option>`).join('')}</select></td></tr>`; }).join('') || '<tr><td colspan="6"><div class="empty">У цій групі порожньо</div></td></tr>'}
         </tbody></table></div>`);
     }
   });

@@ -25,7 +25,8 @@
       const s = Store.session;
       let html;
       if (r.area === 'cabinet' && s.role !== 'client') html = App.authGate();
-      else if (r.area === 'admin' && s.role !== 'admin') html = App.adminGate();
+      else if (r.area === 'admin' && s.role !== 'admin') html = App.staffGate('admin');
+      else if (r.area === 'master' && s.role !== 'master') html = App.staffGate('master');
       else html = r.render();
       const app = document.getElementById('app');
       app.innerHTML = html;
@@ -34,7 +35,7 @@
       this.renderFooter();
       this.renderDemoBar();
       if (window.Chat) Chat.render();
-      if (r.mount && ((r.area !== 'cabinet' || s.role === 'client') && (r.area !== 'admin' || s.role === 'admin'))) r.mount();
+      if (r.mount && (!r.area || s.role === { cabinet: 'client', admin: 'admin', master: 'master' }[r.area])) r.mount();
       if (!keepScroll && prev !== name) window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
     },
     refresh() { Store.save(); this.render(this.current, true); },
@@ -42,6 +43,7 @@
     navLinks() {
       const s = Store.session;
       if (s.role === 'admin' && this.routes[this.current]?.area === 'admin') return [['home', 'Сайт'], ['admin', 'Панель'], ['admin-orders', 'Замовлення'], ['admin-chat', 'Чат']];
+      if (s.role === 'master' && this.routes[this.current]?.area === 'master') return [['home', 'Сайт'], ['master', 'Мої роботи']];
       return [['services', 'Послуги і ціни'], ['booking', 'Онлайн-запис'], ['track', 'Де моє авто?'], ['bonus', 'Бонуси'], ['contacts', 'Контакти']];
     },
     renderTopbar() {
@@ -55,6 +57,8 @@
         acc = `<a class="btn" href="#cabinet"><span class="avatar">${esc(initials(me.name))}</span><span class="hide-sm">${esc(me.name.split(' ')[0])}</span>${unread ? `<span class="badge-dot">${unread}</span>` : ''}</a>`;
       } else if (s.role === 'admin') {
         acc = `<a class="btn dark" href="#admin">${icon('board', 'width="18" height="18"')}<span class="hide-sm">Адмін-панель</span></a>`;
+      } else if (s.role === 'master') {
+        acc = `<a class="btn dark" href="#master">${icon('wrench', 'width="18" height="18"')}<span class="hide-sm">Кабінет майстра</span></a>`;
       } else {
         acc = `<button class="btn" data-act="login">${icon('user', 'width="18" height="18"')}<span class="hide-sm">Кабінет</span></button>`;
       }
@@ -63,7 +67,7 @@
         <nav class="nav" id="nav" aria-label="Головне меню">${this.navLinks().map(([r, t]) => `<a href="#${r}" class="${this.current === r ? 'on' : ''}">${t}</a>`).join('')}</nav>
         <div class="topbar-actions">
           <button class="icon-btn" data-act="theme" aria-label="${dark ? 'Світла тема' : 'Темна тема'}">${icon(dark ? 'sun' : 'moon')}</button>
-          ${s.role !== 'admin' ? `<a class="btn primary hide-sm" href="#booking">Записатися</a>` : ''}
+          ${s.role === 'guest' || s.role === 'client' ? `<a class="btn primary hide-sm" href="#booking">Записатися</a>` : ''}
           ${acc}
           <button class="icon-btn burger" data-act="burger" aria-label="Меню">${icon('menu')}</button>
         </div></div>`;
@@ -72,7 +76,7 @@
       const st = Store.db.settings;
       const area = this.routes[this.current]?.area;
       const f = document.getElementById('footer');
-      if (area === 'admin') { f.hidden = true; return; }
+      if (area === 'admin' || area === 'master') { f.hidden = true; return; }
       f.hidden = false;
       f.innerHTML = `<div class="wrap">
         <div class="stack"><span class="logo"><span class="logo-mark">100</span><span class="logo-text">Hundred Garage</span></span>
@@ -89,6 +93,7 @@
         <span class="tag">ДЕМО</span>
         <button class="r ${r === 'guest' ? 'on' : ''}" data-act="demo-role" data-role="guest">Гість</button>
         <button class="r ${r === 'client' ? 'on' : ''}" data-act="demo-role" data-role="client">Клієнт</button>
+        <button class="r ${r === 'master' ? 'on' : ''}" data-act="demo-role" data-role="master">Майстер</button>
         <button class="r ${r === 'admin' ? 'on' : ''}" data-act="demo-role" data-role="admin">Адмін</button>
         <button class="r" data-act="demo-reset" title="Повернути демо-дані до початкового стану">↺</button>
       </div>`;
@@ -103,13 +108,13 @@
         <button class="btn block" data-act="demo-role" data-role="client">Переглянути демо-кабінет</button>
       </div></section>`;
     },
-    adminGate() {
+    staffGate(kind) {
       return `<section class="wrap auth-wrap fade-in"><form class="panel pad stack" data-form="admin-login">
         <span class="eyebrow">Hundred Garage · персонал</span>
-        <h2>Вхід в адмін-панель</h2>
-        <div class="field"><label for="al-login">Логін</label><input class="input" id="al-login" name="login" value="admin" autocomplete="username"></div>
+        <h2>${kind === 'master' ? 'Вхід для майстрів' : 'Вхід в адмін-панель'}</h2>
+        <div class="field"><label for="al-login">Логін</label><input class="input" id="al-login" name="login" value="${kind === 'master' ? 'taras' : 'admin'}" autocomplete="username"></div>
         <div class="field"><label for="al-pass">Пароль</label><input class="input" id="al-pass" name="pass" type="password" value="demo" autocomplete="current-password"></div>
-        <div class="note">Демо-доступ: <b>admin</b> / <b>demo</b></div>
+        <div class="note"><span>Демо-доступ, пароль <b>demo</b>: адміністратор — <b>admin</b>, майстри — <b>${Store.db.masters.map(m => esc(m.login)).join('</b>, <b>')}</b></span></div>
         <button class="btn primary block" type="submit">Увійти</button>
       </form></section>`;
     },
@@ -171,6 +176,7 @@
   App.on('modal-close', () => closeModal());
   App.on('modal-bg', (el, ev) => { if (ev.target === el) closeModal(); });
   App.on('login', () => App.loginModal('phone'));
+  App.on('photo-view', el => UI.modal({ title: 'Фото з огляду', wide: true, body: `<img src="${el.dataset.src}" alt="Фото з огляду" style="width:100%;border-radius:var(--r)">` }));
   App.on('logout', () => {
     Store.session.role = 'guest'; Store.session.userId = null; Store.saveSession();
     toast('Ви вийшли з кабінету'); App.go('home');
@@ -179,13 +185,15 @@
     const role = el.dataset.role;
     Store.session.role = role;
     Store.session.userId = role === 'client' ? 'u1' : null;
+    Store.session.masterId = role === 'master' ? 'm2' : null;
     Store.saveSession();
     closeModal();
     const area = App.routes[App.current]?.area;
     if (role === 'admin') App.go('admin');
+    else if (role === 'master') App.go('master');
     else if (role === 'client') App.go(area === 'cabinet' ? App.current : 'cabinet');
     else App.go(area ? 'home' : App.current);
-    toast(role === 'admin' ? 'Ви в ролі адміністратора' : role === 'client' ? 'Ви в ролі клієнта: Олександр Коваль' : 'Ви в ролі гостя сайту');
+    toast(role === 'admin' ? 'Ви в ролі адміністратора' : role === 'master' ? 'Ви в ролі майстра: Тарас Бондар' : role === 'client' ? 'Ви в ролі клієнта: Олександр Коваль' : 'Ви в ролі гостя сайту');
   });
   App.on('demo-reset', () => {
     modal({
@@ -216,9 +224,11 @@
     App.go(App.routes[App.current]?.area === 'cabinet' ? App.current : 'cabinet');
   });
   App.form('admin-login', (f, d) => {
-    if (d.login.trim() !== 'admin' || d.pass !== 'demo') { toast('Невірний логін або пароль. Демо: admin / demo'); return; }
-    Store.session.role = 'admin'; Store.session.userId = null; Store.saveSession();
-    App.render('admin');
+    const login = d.login.trim().toLowerCase();
+    const m = Store.db.masters.find(x => x.login === login);
+    if ((login !== 'admin' && !m) || d.pass !== 'demo') { toast('Невірний логін або пароль. Демо: admin або taras, пароль demo'); return; }
+    Store.session.role = m ? 'master' : 'admin'; Store.session.userId = null; Store.session.masterId = m ? m.id : null; Store.saveSession();
+    App.go(m ? 'master' : 'admin');
   });
 
   // ---------- event delegation ----------
