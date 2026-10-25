@@ -28,9 +28,54 @@
     return `<div class="board" aria-label="Завантаженість постів зараз">
       <div class="board-head"><span>Цех · ${fmtDay(Store.dayStr(0), true)}</span><span class="live">наживо ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</span></div>
       ${rows}
-      <div class="board-head" style="padding-top:4px"><span>Номери приховано</span><a href="#track" style="color:#F5C430">Відстежити своє авто →</a></div>
+      <div class="board-head" style="padding-top:4px"><span>Номери приховано</span><a href="#track">Відстежити своє авто →</a></div>
     </div>`;
   }
+
+  // Hero: today's real work order from the demo data, with the approval step the visitor can try
+  function workOrder() {
+    const today = Store.dayStr(0);
+    const live = S().orders.filter(o => o.date === today);
+    const o = live.find(x => x.status === 'approval' && (x.items || []).length) || live.find(x => x.status !== 'done') || S().orders[0];
+    const car = Store.car(o.carId);
+    const m = o.master ? Store.master(o.master) : null;
+    const bayNo = (S().bays.find(b => b.id === o.bay) || { name: '' }).name.replace(/\D/g, '');
+    const done = o.services.map(id => Store.service(id)).filter(Boolean);
+    const finds = (o.items || []).filter(i => i.sev !== 'green').slice(0, 2);
+    const base = done.reduce((a, s) => a + Store.priceFor(s.id, car.cls), 0);
+    const pct = Math.round(progressOf(o.status) * 100);
+    return `<div class="wo-stack"><article class="wo" id="wo" data-base="${base}" aria-label="Приклад заказ-наряду">
+      <header class="wo-head"><div><span class="wo-kind">Заказ-наряд</span><b class="wo-no">№ ${esc(String(o.id).replace(/\D/g, '') || '1047')}</b></div>${UI.seal('wo-seal')}</header>
+      <dl class="wo-fields">
+        <div><dt>Автомобіль</dt><dd>${esc(car.make + ' ' + car.model)}</dd></div>
+        <div><dt>Держномер</dt><dd>${UI.plate(maskPlate(car.plate))}</dd></div>
+        <div><dt>Пробіг</dt><dd>${num(o.mileage || car.mileage)} км</dd></div>
+        <div><dt>Пост · майстер</dt><dd>${bayNo} · ${esc(m ? m.name.split(' ')[0] : '—')}</dd></div>
+      </dl>
+      <ol class="wo-lines">
+        ${done.map(s => `<li class="ok"><span class="tick" aria-hidden="true">${icon('check', 'width="14" height="14"')}</span><span class="nm">${esc(s.name)}</span><span class="pr">${money(Store.priceFor(s.id, car.cls))}</span></li>`).join('')}
+        ${finds.map(i => `<li class="find" data-price="${i.price}"><span class="tick" aria-hidden="true">${icon('camera', 'width="14" height="14"')}</span><span class="nm">${esc(i.name)}<small>${i.sev === 'red' ? 'Критично — майстер радить замінити' : 'Можна відкласти'}</small></span><span class="pr">${money(i.price)}</span>
+          <span class="wo-ask"><button class="btn sm primary" data-act="wo-yes">Погодити</button><button class="btn sm ghost" data-act="wo-no">Відкласти</button></span></li>`).join('')}
+      </ol>
+      <footer class="wo-foot">
+        <div class="wo-prog"><span>${esc(Store.status(o.status).short)}</span><div class="bar"><i style="width:${pct}%"></i></div><span class="num">${pct}%</span></div>
+        <div class="wo-total"><span>До сплати</span><b class="num" id="wo-total">${money(base)}</b></div>
+        <div class="wo-sign"><span>Клієнт</span><i>Погоджено онлайн</i></div>
+      </footer>
+      <div class="wo-stamp" aria-hidden="true">Погоджено</div>
+    </article></div>`;
+  }
+  function woUpdate() {
+    const wo = document.getElementById('wo');
+    if (!wo) return;
+    let total = Number(wo.dataset.base);
+    wo.querySelectorAll('.find.yes').forEach(li => { total += Number(li.dataset.price); });
+    document.getElementById('wo-total').textContent = money(total);
+    const open = wo.querySelectorAll('.find:not(.yes):not(.no)').length;
+    if (!open) wo.classList.add('stamped');
+  }
+  App.on('wo-yes', el => { el.closest('.find').classList.add('yes'); woUpdate(); });
+  App.on('wo-no', el => { el.closest('.find').classList.add('no'); woUpdate(); });
 
   function rating() {
     const pub = S().reviews.filter(r => r.status === 'published');
@@ -54,26 +99,31 @@
       return `
       <section class="hero"><div class="wrap hero-grid">
         <div class="hero-copy fade-in">
-          <span class="eyebrow">Автосервіс · Київ · 4 пости</span>
           <h1>Ремонт, який видно <span>до гвинтика</span></h1>
-          <p class="lead">Записуйтесь онлайн за хвилину, стежте за ремонтом у реальному часі та погоджуйте кожну роботу з фото й ціною — у вашому кабінеті.</p>
+          <p class="lead">Кожна робота — рядок у вашому заказ-наряді: з фото, ціною і вашим «так». Без згоди в кабінеті майстер нічого не міняє.</p>
           <div class="row"><a class="btn primary" href="#booking">Записатися онлайн ${icon('arrow', 'width="18" height="18"')}</a><a class="btn" href="#track">Де моє авто?</a></div>
-          <div class="hero-facts">
-            <div class="fact"><b>${rt.avg}★</b><span>${rt.count} ${plural(rt.count, 'відгук', 'відгуки', 'відгуків')}</span></div>
-            <div class="fact"><b>12 міс</b><span>гарантія на роботи</span></div>
-            <div class="fact"><b>до 10%</b><span>повертаємо балами</span></div>
-          </div>
+          <dl class="hero-facts">
+            <div class="fact"><dt>Рейтинг</dt><dd><b>${rt.avg}</b> ${stars(rt.avg)}<small>${rt.count} ${plural(rt.count, 'відгук', 'відгуки', 'відгуків')}</small></dd></div>
+            <div class="fact"><dt>Гарантія</dt><dd><b>12 міс</b><small>на роботи й деталі</small></dd></div>
+            <div class="fact"><dt>Кешбек</dt><dd><b>до 10%</b><small>балами</small></dd></div>
+          </dl>
+          <p class="hero-hint">${icon('arrow', 'width="16" height="16"')} Спробуйте: погодьте роботи в наряді — так це виглядає у кабінеті.</p>
         </div>
+        ${workOrder()}
+      </div></section>
+
+      <section class="section bays-sec"><div class="wrap">
+        <div class="section-head"><div><h2>Цех просто зараз</h2><p class="muted">Чотири пости, кожен — відкритий рядок журналу. Номери авто приховані.</p></div><a class="btn ghost" href="#track">Відстежити своє авто</a></div>
         ${bayBoard()}
-      </div><div class="hazard-band" aria-hidden="true"></div></section>
+      </div></section>
 
       <section class="section"><div class="wrap">
-        <div class="section-head"><div><span class="eyebrow">Що турбує авто?</span><h2>Оберіть напрямок — підберемо час</h2></div><a class="btn ghost" href="#services">Усі послуги і ціни</a></div>
+        <div class="section-head"><div><h2>Оберіть напрямок — підберемо час</h2></div><a class="btn ghost" href="#services">Усі послуги і ціни</a></div>
         <div class="cats">${Store.CATEGORIES.map(c => `<button class="cat" data-act="book-cat" data-cat="${c.id}">${icon(c.icon)}<b>${esc(c.name)}</b><span>${esc(c.hint)}</span></button>`).join('')}</div>
       </div></section>
 
       <section class="section" style="padding-top:0"><div class="wrap">
-        <div class="section-head"><div><span class="eyebrow">Як проходить візит</span><h2>Ви вирішуєте, що ремонтувати</h2><p class="muted">Жодна додаткова робота не починається без вашої згоди в кабінеті. Ціна в чеку дорівнює погодженій.</p></div></div>
+        <div class="section-head"><div><h2>Ви вирішуєте, що ремонтувати</h2><p class="muted">Жодна додаткова робота не починається без вашої згоди в кабінеті. Ціна в чеку дорівнює погодженій.</p></div></div>
         <div class="process">
           <div class="step"><b>Запис онлайн</b><p>Обираєте послугу й вільний час на завантаженості постів. Підтвердження — у Viber.</p></div>
           <div class="step"><b>Прийом і огляд</b><p>Майстер приймає авто, фіксує пробіг і стан на фото. Огляд 40 пунктів — безкоштовно.</p></div>
@@ -85,14 +135,13 @@
 
       <section class="section" style="padding-top:0"><div class="wrap grid g2" style="gap:clamp(24px,4vw,56px);align-items:start">
         <div class="stack">
-          <span class="eyebrow">Популярне</span><h2>Прозорі ціни</h2>
+          <h2>Прозорі ціни</h2>
           <p class="muted">Ціни за роботу для легкового авто. Для кросоверів, бусів і преміуму — калькулятор на сторінці послуг.</p>
           <div class="price-list">${popular.map(s => priceRow(s, 'sedan', true)).join('')}</div>
         </div>
         <div class="stack">
           <div class="bonus-card">
-            <span class="eyebrow" style="color:var(--hazard)">Бонусна програма</span>
-            <h2 style="color:var(--panel)">Кожна гривня повертається балами</h2>
+            <h2>Кожна гривня повертається балами</h2>
             <p class="muted">${st.levels.map(l => `${l.name} — ${l.cashback}%`).join(' · ')}. 1 бал = 1 ₴, оплачуйте балами до ${st.maxPayPct}% чеку.</p>
             <div class="row"><a class="btn primary" href="#bonus">Як це працює</a><button class="btn" data-act="login" style="background:transparent;color:var(--panel);border-color:rgba(255,255,255,.25)">+${st.welcome} балів за реєстрацію</button></div>
           </div>
@@ -101,7 +150,7 @@
       </div></section>
 
       <section class="section" style="padding-top:0"><div class="wrap">
-        <div class="section-head"><div><span class="eyebrow">Чому нам довіряють</span><h2>Сервіс, у якому не треба стояти над майстром</h2></div></div>
+        <div class="section-head"><div><h2>Сервіс, у якому не треба стояти над майстром</h2></div></div>
         <div class="grid g3" style="gap:0 24px">
           <div class="feat">${icon('camera')}<b>Фотозвіт кожного етапу</b><p>Знімки зношених деталей і готової роботи — у кабінеті. Старі запчастини віддаємо на вимогу.</p></div>
           <div class="feat">${icon('shield')}<b>Гарантія 12 міс / 20 000 км</b><p>На роботи та запчастини, встановлені в нас. Гарантійний талон — в історії авто.</p></div>
@@ -113,19 +162,19 @@
       </div></section>
 
       <section class="section" style="padding-top:0"><div class="wrap">
-        <div class="section-head"><div><span class="eyebrow">Команда</span><h2>Майстри, які відповідають за результат</h2></div></div>
+        <div class="section-head"><div><h2>Майстри, які відповідають за результат</h2></div></div>
         <div class="grid g4 masters">${S().masters.map(m => `<div class="master"><div class="master-ph"><span class="ini">${esc(UI.initials(m.name))}</span><span class="exp">${m.exp} ${plural(m.exp, 'рік', 'роки', 'років')} досвіду</span></div>
           <div><b>${esc(m.name)}</b><p>${esc(m.role)}</p><p class="mono">${m.rating.toFixed(1)}★ · ${num(m.jobs)} робіт</p></div></div>`).join('')}</div>
       </div></section>
 
       <section class="section" style="padding-top:0" id="reviews"><div class="wrap">
-        <div class="section-head"><div><span class="eyebrow">Відгуки</span><div class="rating-big"><b>${rt.avg}</b><span class="stars">${stars(rt.avg)}</span><span class="muted">${rt.count} ${plural(rt.count, 'відгук', 'відгуки', 'відгуків')} після візиту</span></div></div>
+        <div class="section-head"><div><div class="rating-big"><b>${rt.avg}</b><span class="stars">${stars(rt.avg)}</span><span class="muted">${rt.count} ${plural(rt.count, 'відгук', 'відгуки', 'відгуків')} після візиту</span></div></div>
           <button class="btn" data-act="review-new">Залишити відгук</button></div>
         ${(() => { const list = S().reviews.filter(r => r.status === 'published').slice(0, 6); return `<div class="grid ${list.length % 3 === 0 ? 'g3' : 'g2'}">${list.map(reviewCard).join('')}</div>`; })()}
       </div></section>
 
       <section class="section" style="padding-top:0" id="faq"><div class="wrap grid g2" style="gap:clamp(24px,4vw,56px);align-items:start">
-        <div class="stack"><span class="eyebrow">Питання</span><h2>Коротко про важливе</h2><p class="muted">Не знайшли відповідь? Напишіть у чат — адміністратор відповідає в середньому за 4 хвилини.</p><div><button class="btn" data-act="chat-open">${icon('chat', 'width="18" height="18"')} Написати в чат</button></div></div>
+        <div class="stack"><h2>Коротко про важливе</h2><p class="muted">Не знайшли відповідь? Напишіть у чат — адміністратор відповідає в середньому за 4 хвилини.</p><div><button class="btn" data-act="chat-open">${icon('chat', 'width="18" height="18"')} Написати в чат</button></div></div>
         <div class="faq">
           <details><summary>Чи можна привезти свої запчастини?</summary><p>Так. Оберіть «Привезу свої» під час запису або біля будь-якої запчастини в кабінеті. Ми підкажемо точний артикул. Гарантію на роботу надаємо повністю, на саму запчастину — її продавець.</p></details>
           <details><summary>Як ви рахуєте запчастини?</summary><p>Кожна запчастина — окремим рядком: бренд, артикул, ціна і термін постачання. Часто пропонуємо два варіанти — оригінал і перевірений аналог. Ви обираєте в кабінеті, а статус замовлення видно до моменту, коли деталь приїде на склад.</p></details>

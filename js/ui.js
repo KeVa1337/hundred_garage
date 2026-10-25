@@ -78,6 +78,11 @@
   const icon = (name, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${P[name] || ''}</svg>`;
 
   const statusPill = id => { const s = Store.status(id); return `<span class="pill ${s.tone}">${esc(s.short)}</span>`; };
+  // Brand mark: a round workshop seal, the kind every Ukrainian business presses onto its paperwork
+  const seal = (cls = '') => `<svg class="seal ${cls}" viewBox="0 0 120 120" aria-hidden="true"><defs><path id="seal-ring${cls}" d="M60 60m-41 0a41 41 0 1 1 82 0a41 41 0 1 1-82 0"/></defs>
+    <circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="4.5"/><circle cx="60" cy="60" r="30" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <text font-family="Onest, sans-serif" font-weight="700" font-size="10.5" fill="currentColor"><textPath href="#seal-ring${cls}" textLength="250" lengthAdjust="spacing">HUNDRED GARAGE • АВТОСЕРВІС • КИЇВ •</textPath></text>
+    <text x="60" y="69" text-anchor="middle" font-family="Unbounded, sans-serif" font-weight="800" font-size="24" letter-spacing="-1" fill="currentColor">100</text></svg>`;
   const plate = p => `<span class="plate">${esc(p)}</span>`;
   const stars = r => '★★★★★'.slice(0, Math.round(r)) + '☆☆☆☆☆'.slice(0, 5 - Math.round(r));
   const odometer = km => {
@@ -157,5 +162,5 @@
     });
   }
 
-  window.UI = { esc, money, num, fmtDay, fmtTime, fmtStamp, fmtPhone, dur, initials, plural, icon, statusPill, plate, stars, odometer, carName, toast, modal, closeModal, modalOpen, parseDay, WD, MONTHS, photoThumb, compressImage };
+  window.UI = { seal, esc, money, num, fmtDay, fmtTime, fmtStamp, fmtPhone, dur, initials, plural, icon, statusPill, plate, stars, odometer, carName, toast, modal, closeModal, modalOpen, parseDay, WD, MONTHS, photoThumb, compressImage };
 })();

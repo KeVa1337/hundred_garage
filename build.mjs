@@ -25,6 +25,7 @@ let out = html
 writeFileSync('dist/index.html', out);
 writeFileSync('dist/robots.txt', 'User-agent: *\nAllow: /\n');
 writeFileSync('dist/.nojekyll', '');
+writeFileSync('dist/favicon.svg', readFileSync('favicon.svg'));
 
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 const src = scripts.reduce((s, f) => s + readFileSync(f).length, 0) + readFileSync('css/app.css').length;

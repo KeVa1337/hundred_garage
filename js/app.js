@@ -63,7 +63,7 @@
         acc = `<button class="btn" data-act="login">${icon('user', 'width="18" height="18"')}<span class="hide-sm">Кабінет</span></button>`;
       }
       document.getElementById('topbar').innerHTML = `<div class="wrap">
-        <a class="logo" href="#home" aria-label="Hundred Garage — на головну"><span class="logo-mark">100</span><span class="logo-text">Hundred Garage<small>АВТОСЕРВІС · КИЇВ</small></span></a>
+        <a class="logo" href="#home" aria-label="Hundred Garage — на головну">${UI.seal('top')}<span class="logo-text">Hundred Garage<small>автосервіс у Києві</small></span></a>
         <nav class="nav" id="nav" aria-label="Головне меню">${this.navLinks().map(([r, t]) => `<a href="#${r}" class="${this.current === r ? 'on' : ''}">${t}</a>`).join('')}</nav>
         <div class="topbar-actions">
           <button class="icon-btn" data-act="theme" aria-label="${dark ? 'Світла тема' : 'Темна тема'}">${icon(dark ? 'sun' : 'moon')}</button>
@@ -79,7 +79,7 @@
       if (area === 'admin' || area === 'master') { f.hidden = true; return; }
       f.hidden = false;
       f.innerHTML = `<div class="wrap">
-        <div class="stack"><span class="logo"><span class="logo-mark">100</span><span class="logo-text">Hundred Garage</span></span>
+        <div class="stack"><span class="logo">${UI.seal('foot')}<span class="logo-text">Hundred Garage</span></span>
           <p>Сервіс, де кожну роботу видно: фото, ціна і ваше рішення — до того, як майстер візьме ключ.</p>
           <p class="mono">${esc(st.phone)}</p></div>
         <div><b>Клієнтам</b><a href="#services">Послуги і ціни</a><a href="#booking">Онлайн-запис</a><a href="#track">Де моє авто?</a><a href="#bonus">Бонусна програма</a></div>
